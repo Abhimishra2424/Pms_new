@@ -1,33 +1,23 @@
-const { pool } = require('../db');
+const { TaskComment, User } = require('../models');
 
 const findByTask = async (taskId) => {
-  const [rows] = await pool.query(`
-    SELECT c.*, u.name as user_name, u.avatar as user_avatar
-    FROM task_comments c
-    JOIN users u ON c.user_id = u.id
-    WHERE c.task_id = ?
-    ORDER BY c.created_at ASC
-  `, [taskId]);
-  return rows;
+  return await TaskComment.findAll({
+    where: { task_id: taskId },
+    include: [{ model: User, as: 'user', attributes: ['name', 'avatar'] }],
+    order: [['created_at', 'ASC']],
+  });
 };
 
 const create = async (taskId, userId, content) => {
-  const [result] = await pool.query(
-    'INSERT INTO task_comments (task_id, user_id, content) VALUES (?, ?, ?)',
-    [taskId, userId, content]
-  );
-  const [rows] = await pool.query(`
-    SELECT c.*, u.name as user_name, u.avatar as user_avatar
-    FROM task_comments c
-    JOIN users u ON c.user_id = u.id
-    WHERE c.id = ?
-  `, [result.insertId]);
-  return rows[0];
+  const comment = await TaskComment.create({ task_id: taskId, user_id: userId, content });
+  return await TaskComment.findByPk(comment.id, {
+    include: [{ model: User, as: 'user', attributes: ['name', 'avatar'] }],
+  });
 };
 
 const remove = async (id, userId) => {
-  const [result] = await pool.query('DELETE FROM task_comments WHERE id = ? AND user_id = ?', [id, userId]);
-  return result.affectedRows > 0;
+  const deleted = await TaskComment.destroy({ where: { id, user_id: userId } });
+  return deleted > 0;
 };
 
 module.exports = { findByTask, create, remove };

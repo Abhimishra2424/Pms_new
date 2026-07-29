@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const { JWT_SECRET } = require('../middleware');
 const userService = require('../services/userService');
 
@@ -11,9 +12,9 @@ router.post('/register', async (req, res) => {
   try {
     const user = await userService.createUser({ name, email, password });
     const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' });
-    res.status(201).json({ token, user });
+    res.status(201).json({ token, user: { id: user.id, name: user.name, email: user.email } });
   } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Email already exists' });
+    if (err.name === 'SequelizeUniqueConstraintError') return res.status(409).json({ error: 'Email already exists' });
     res.status(500).json({ error: err.message });
   }
 });
@@ -24,7 +25,6 @@ router.post('/login', async (req, res) => {
   try {
     const user = await userService.findUserByEmail(email);
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-    const bcrypt = require('bcryptjs');
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json({ error: 'Invalid credentials' });
     const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' });

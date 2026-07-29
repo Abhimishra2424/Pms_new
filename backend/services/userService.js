@@ -1,21 +1,17 @@
-const { pool } = require('../db');
 const bcrypt = require('bcryptjs');
+const { User } = require('../models');
 
 const createUser = async ({ name, email, password }) => {
   const hash = await bcrypt.hash(password, 10);
-  const [result] = await pool.query('INSERT INTO users (name, email, password) VALUES (?, ?, ?)', [name, email, hash]);
-  const [rows] = await pool.query('SELECT id, name, email FROM users WHERE id = ?', [result.insertId]);
-  return rows[0];
+  return await User.create({ name, email, password: hash });
 };
 
 const findUserByEmail = async (email) => {
-  const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
-  return rows[0] || null;
+  return await User.findOne({ where: { email } });
 };
 
 const findUserById = async (id) => {
-  const [rows] = await pool.query('SELECT id, name, email FROM users WHERE id = ?', [id]);
-  return rows[0] || null;
+  return await User.findByPk(id, { attributes: { exclude: ['password'] } });
 };
 
 module.exports = { createUser, findUserByEmail, findUserById };
