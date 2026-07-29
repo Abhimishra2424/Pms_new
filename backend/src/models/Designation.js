@@ -47,9 +47,6 @@ Designation.init(
     paranoid: true,
     timestamps: true,
     underscored: true,
-    indexes: [
-      { fields: ['title', 'companyId'] },
-    ],
   }
 );
 

@@ -145,13 +145,6 @@ User.init(
     paranoid: true,
     timestamps: true,
     underscored: true,
-    indexes: [
-      { fields: ['email'] },
-      { fields: ['employeeId'] },
-      { fields: ['role'] },
-      { fields: ['companyId'] },
-      { fields: ['departmentId'] },
-    ],
     hooks: {
       beforeCreate: async (user) => {
         if (user.password) {

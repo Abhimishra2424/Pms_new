@@ -119,12 +119,6 @@ Project.init(
     paranoid: true,
     timestamps: true,
     underscored: true,
-    indexes: [
-      { fields: ['key'] },
-      { fields: ['status'] },
-      { fields: ['companyId'] },
-      { fields: ['leadId'] },
-    ],
   }
 );
 

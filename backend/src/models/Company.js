@@ -109,10 +109,6 @@ Company.init(
     paranoid: true,
     timestamps: true,
     underscored: true,
-    indexes: [
-      { fields: ['slug'] },
-      { fields: ['email'] },
-    ],
   }
 );
 

@@ -45,9 +45,6 @@ ProjectMember.init(
     paranoid: true,
     timestamps: true,
     underscored: true,
-    indexes: [
-      { unique: true, fields: ['projectId', 'userId'] },
-    ],
   }
 );
 

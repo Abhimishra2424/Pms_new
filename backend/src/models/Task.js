@@ -144,12 +144,6 @@ Task.init(
     paranoid: true,
     timestamps: true,
     underscored: true,
-    indexes: [
-      { fields: ['projectId', 'status'] },
-      { fields: ['assigneeId'] },
-      { fields: ['sprintId'] },
-      { fields: ['parentId'] },
-    ],
   }
 );
 

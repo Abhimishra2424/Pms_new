@@ -58,9 +58,6 @@ Sprint.init(
     paranoid: true,
     timestamps: true,
     underscored: true,
-    indexes: [
-      { fields: ['projectId', 'status'] },
-    ],
   }
 );
 

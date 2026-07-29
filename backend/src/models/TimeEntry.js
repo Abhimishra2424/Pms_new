@@ -69,10 +69,6 @@ TimeEntry.init(
     paranoid: true,
     timestamps: true,
     underscored: true,
-    indexes: [
-      { fields: ['userId', 'date'] },
-      { fields: ['taskId'] },
-    ],
   }
 );
 

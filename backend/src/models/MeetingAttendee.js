@@ -38,9 +38,6 @@ MeetingAttendee.init(
     paranoid: true,
     timestamps: true,
     underscored: true,
-    indexes: [
-      { unique: true, fields: ['meetingId', 'userId'] },
-    ],
   }
 );
 
