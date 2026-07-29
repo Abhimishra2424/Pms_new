@@ -8,8 +8,7 @@ import { motion } from 'framer-motion';
 import { useDispatch, useSelector } from 'react-redux';
 import { Mail, Lock, Visibility, VisibilityOff } from '@mui/icons-material';
 import { toast } from 'react-toastify';
-import { loginStart, loginSuccess, loginFailure, clearError } from '../../redux/slices/authSlice';
-import * as authApi from '../../api/authApi';
+import { loginStart, clearError } from '../../redux/slices/authSlice';
 
 const schema = yup.object({
   email: yup.string().email('Enter a valid email').required('Email is required'),
@@ -34,7 +33,7 @@ const itemVariants = {
 export default function LoginPage() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { loading, error } = useSelector((state) => state.auth);
+  const { loading, error, isAuthenticated } = useSelector((state) => state.auth);
   const [showPassword, setShowPassword] = useState(false);
 
   const { register, handleSubmit, formState: { errors } } = useForm({
@@ -46,18 +45,15 @@ export default function LoginPage() {
     dispatch(clearError());
   }, [dispatch]);
 
-  const onSubmit = async (data) => {
-    dispatch(loginStart());
-    try {
-      const response = await authApi.login({ email: data.email, password: data.password });
-      dispatch(loginSuccess(response.data));
+  useEffect(() => {
+    if (isAuthenticated) {
       toast.success('Welcome back!');
       navigate('/dashboard', { replace: true });
-    } catch (err) {
-      const message = err.response?.data?.message || err.message || 'Login failed. Please try again.';
-      dispatch(loginFailure(message));
-      toast.error(message);
     }
+  }, [isAuthenticated, navigate]);
+
+  const onSubmit = (data) => {
+    dispatch(loginStart({ email: data.email, password: data.password }));
   };
 
   return (
