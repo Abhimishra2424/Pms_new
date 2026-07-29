@@ -1,359 +1,349 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { Login, Register } from './Auth';
-import { marked } from 'marked';
 import './App.css';
 
-const THEME_KEY = 'notes-theme';
-const COLORS = [
-  { value: '#6366f1', label: 'Purple' },
-  { value: '#3b82f6', label: 'Blue' },
-  { value: '#10b981', label: 'Green' },
-  { value: '#f59e0b', label: 'Amber' },
-  { value: '#ef4444', label: 'Red' },
-  { value: '#ec4899', label: 'Pink' },
-  { value: '#8b5cf6', label: 'Violet' },
-  { value: '#14b8a6', label: 'Teal' },
-];
+const PRIORITY_COLORS = { urgent: '#ef4444', high: '#f59e0b', medium: '#3b82f6', low: '#64748b' };
+const STATUSES = ['todo', 'in_progress', 'done'];
 
-function Notes() {
-  const { token, user, logout } = useAuth();
-  const [notes, setNotes] = useState([]);
-  const [form, setForm] = useState({ title: '', content: '', color: '#6366f1', reminder_at: '' });
-  const [editingId, setEditingId] = useState(null);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('active');
-  const [sort, setSort] = useState('updated');
-  const [tags, setTags] = useState([]);
-  const [newTag, setNewTag] = useState('');
+function Sidebar({ activeTab, setActiveTab, projects, onSelectProject, selectedProjectId, onLogout, user, dark, toggleTheme }) {
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-header">
+        <h2>PMS</h2>
+        <button className="icon-btn" onClick={toggleTheme}>{dark ? '☀️' : '🌙'}</button>
+      </div>
+      <nav className="sidebar-nav">
+        <button className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => { setActiveTab('dashboard'); onSelectProject(null); }}>
+          📊 Dashboard
+        </button>
+        <div className="nav-section-label">Projects</div>
+        {projects.map(p => (
+          <button key={p.id} className={`nav-item project-item ${selectedProjectId === p.id ? 'active' : ''}`} onClick={() => { onSelectProject(p.id); setActiveTab('project'); }}>
+            <span className="project-dot" style={{ background: p.color }} />
+            <span className="project-nav-name">{p.name}</span>
+            <span className="project-nav-count">{p.task_count}</span>
+          </button>
+        ))}
+        <button className="nav-item new-project-btn" onClick={() => setActiveTab('new-project')}>
+          + New Project
+        </button>
+      </nav>
+      <div className="sidebar-footer">
+        <span className="user-name">{user?.name}</span>
+        <button className="logout-btn" onClick={onLogout}>Logout</button>
+      </div>
+    </aside>
+  );
+}
+
+function Dashboard({ stats, projects, onSelectProject }) {
+  const cards = [
+    { label: 'Projects', value: stats?.projects || 0, color: '#818cf8', icon: '📁' },
+    { label: 'Total Tasks', value: stats?.tasks || 0, color: '#3b82f6', icon: '📋' },
+    { label: 'To Do', value: stats?.todo || 0, color: '#64748b', icon: '📝' },
+    { label: 'In Progress', value: stats?.in_progress || 0, color: '#f59e0b', icon: '🔄' },
+    { label: 'Done', value: stats?.done || 0, color: '#10b981', icon: '✅' },
+    { label: 'Overdue', value: stats?.overdue || 0, color: '#ef4444', icon: '⚠️' },
+  ];
+
+  return (
+    <main className="main-content">
+      <h1 className="page-title">Dashboard</h1>
+      <div className="stats-grid">
+        {cards.map(c => (
+          <div key={c.label} className="stat-card" style={{ borderLeftColor: c.color }}>
+            <div className="stat-icon">{c.icon}</div>
+            <div className="stat-info">
+              <span className="stat-value">{c.value}</span>
+              <span className="stat-label">{c.label}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <h2 className="section-title">Recent Tasks</h2>
+      {stats?.recent?.length > 0 ? (
+        <div className="recent-tasks">
+          {stats.recent.map(task => (
+            <div key={task.id} className="recent-task-row">
+              <div className="recent-task-info">
+                <span className="recent-task-title">{task.title}</span>
+                <span className="recent-task-project" style={{ color: task.project?.color }}>{task.project?.name}</span>
+              </div>
+              <span className={`priority-badge ${task.priority}`}>{task.priority}</span>
+              <span className={`status-badge ${task.status}`}>{task.status.replace('_', ' ')}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="empty-state">No tasks yet. Create a project and start adding tasks!</p>
+      )}
+
+      <h2 className="section-title">Projects</h2>
+      <div className="project-grid">
+        {projects.map(p => (
+          <div key={p.id} className="project-card" style={{ borderTopColor: p.color }} onClick={() => onSelectProject(p.id)}>
+            <div className="project-card-header">
+              <span className="project-card-icon" style={{ background: p.color }}>{p.name[0]}</span>
+              <h3>{p.name}</h3>
+            </div>
+            <p>{p.description || 'No description'}</p>
+            <div className="project-card-footer">
+              <span>{p.task_count || 0} tasks</span>
+              <span className="progress-bar">
+                <span className="progress-fill" style={{ width: p.task_count ? `${(p.done_count / p.task_count) * 100}%` : '0%', background: p.color }} />
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </main>
+  );
+}
+
+function ProjectBoard({ project, tasks, onBack, onCreateTask, onStatusChange, onEditTask, onDeleteTask, onAddComment }) {
+  const [showModal, setShowModal] = useState(false);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [comment, setComment] = useState('');
+  const [comments, setComments] = useState([]);
+  const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium', assignee_id: '', due_date: '' });
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` };
+
+  const openTask = async (task) => {
+    setSelectedTask(task);
+    const res = await fetch(`/api/tasks/${task.id}/comments`, { headers });
+    if (res.ok) setComments(await res.json());
+    setShowModal(true);
+  };
+
+  const handleCommentSubmit = async (e) => {
+    e.preventDefault();
+    if (!comment.trim()) return;
+    const res = await fetch(`/api/tasks/${selectedTask.id}/comments`, { method: 'POST', headers, body: JSON.stringify({ content: comment }) });
+    if (res.ok) {
+      setComments([...comments, await res.json()]);
+      setComment('');
+    }
+  };
+
+  const grouped = {};
+  STATUSES.forEach(s => { grouped[s] = tasks.filter(t => t.status === s); });
+
+  return (
+    <main className="main-content">
+      <div className="project-header">
+        <button className="back-btn" onClick={onBack}>← Back</button>
+        <h1 className="page-title" style={{ color: project?.color }}>{project?.name}</h1>
+        <button className="primary-btn" onClick={() => setNewTask({ title: '', description: '', priority: 'medium', assignee_id: '', due_date: '' })}>
+          + New Task
+        </button>
+      </div>
+
+      <div className="kanban-board">
+        {STATUSES.map(status => (
+          <div key={status} className="kanban-column">
+            <div className="kanban-column-header">
+              <span className={`status-badge ${status}`}>{status.replace('_', ' ').toUpperCase()}</span>
+              <span className="kanban-count">{grouped[status]?.length || 0}</span>
+            </div>
+            <div className="kanban-cards" onDragOver={e => e.preventDefault()} onDrop={async (e) => {
+              const id = e.dataTransfer.getData('taskId');
+              if (id) await onStatusChange(id, status);
+            }}>
+              {(grouped[status] || []).map(task => (
+                <div key={task.id} className="kanban-card" draggable onDragStart={e => e.dataTransfer.setData('taskId', task.id)} onClick={() => openTask(task)}>
+                  <div className="kanban-card-header">
+                    <span className={`priority-indicator ${task.priority}`} />
+                    <span className="kanban-card-title">{task.title}</span>
+                  </div>
+                  {task.assignee && <span className="assignee-name">👤 {task.assignee.name}</span>}
+                  {task.due_date && <span className={`due-date ${new Date(task.due_date) < new Date() && task.status !== 'done' ? 'overdue' : ''}`}>📅 {new Date(task.due_date).toLocaleDateString()}</span>}
+                </div>
+              ))}
+              {(grouped[status] || []).length === 0 && <div className="kanban-empty">Drop tasks here</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showModal && selectedTask && (
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <input className="modal-title-input" value={selectedTask.title} onChange={async e => {
+                const newTitle = e.target.value;
+                setSelectedTask({ ...selectedTask, title: newTitle });
+                await fetch(`/api/tasks/${selectedTask.id}`, { method: 'PUT', headers, body: JSON.stringify({ ...selectedTask, title: newTitle }) });
+              }} />
+              <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
+            </div>
+            <div className="task-meta">
+              <span className={`status-badge ${selectedTask.status}`}>{selectedTask.status.replace('_', ' ')}</span>
+              <span className={`priority-badge ${selectedTask.priority}`}>{selectedTask.priority}</span>
+              {selectedTask.due_date && <span>📅 {new Date(selectedTask.due_date).toLocaleDateString()}</span>}
+              {selectedTask.assignee && <span>👤 {selectedTask.assignee.name}</span>}
+            </div>
+            <div className="status-actions">
+              {STATUSES.map(s => (
+                <button key={s} className={`status-btn ${selectedTask.status === s ? 'active' : ''}`} onClick={async () => {
+                  const updated = await (await fetch(`/api/tasks/${selectedTask.id}/status`, { method: 'PATCH', headers, body: JSON.stringify({ status: s }) })).json();
+                  setSelectedTask(updated);
+                  onStatusChange(selectedTask.id, s);
+                }}>{s.replace('_', ' ')}</button>
+              ))}
+            </div>
+            <textarea className="modal-desc" value={selectedTask.description || ''} placeholder="Description..." onChange={async e => {
+              const desc = e.target.value;
+              setSelectedTask({ ...selectedTask, description: desc });
+              await fetch(`/api/tasks/${selectedTask.id}`, { method: 'PUT', headers, body: JSON.stringify({ ...selectedTask, description: desc }) });
+            }} />
+            <div className="comments-section">
+              <h4>Comments</h4>
+              <div className="comments-list">
+                {comments.map(c => (
+                  <div key={c.id} className="comment">
+                    <span className="comment-user">{c.user?.name || 'Unknown'}</span>
+                    <span className="comment-text">{c.content}</span>
+                    <span className="comment-time">{new Date(c.created_at).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+              <form className="comment-form" onSubmit={handleCommentSubmit}>
+                <input placeholder="Write a comment..." value={comment} onChange={e => setComment(e.target.value)} />
+                <button type="submit">Send</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}
+
+function ProjectForm({ onSubmit, onCancel }) {
+  const [form, setForm] = useState({ name: '', description: '', color: '#6366f1' });
+  const COLORS = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#14b8a6', '#8b5cf6'];
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    await onSubmit(form);
+    setForm({ name: '', description: '', color: '#6366f1' });
+  };
+
+  return (
+    <main className="main-content">
+      <h1 className="page-title">New Project</h1>
+      <form className="project-form" onSubmit={handleSubmit}>
+        <input placeholder="Project name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} autoFocus />
+        <textarea placeholder="Description (optional)" rows={3} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
+        <div className="color-picker">
+          <span>Color</span>
+          <div className="color-options">
+            {COLORS.map(c => (
+              <button key={c} type="button" className={`color-swatch ${form.color === c ? 'active' : ''}`} style={{ background: c }} onClick={() => setForm({ ...form, color: c })} />
+            ))}
+          </div>
+        </div>
+        <div className="form-actions">
+          <button type="submit">Create Project</button>
+          <button type="button" onClick={onCancel}>Cancel</button>
+        </div>
+      </form>
+    </main>
+  );
+}
+
+function App() {
+  const { user, logout } = useAuth();
+  const [dark, setDark] = useState(() => localStorage.getItem('theme') !== 'light');
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [tasks, setTasks] = useState([]);
   const [stats, setStats] = useState(null);
-  const [trash, setTrash] = useState([]);
-  const [showTrash, setShowTrash] = useState(false);
-  const [dark, setDark] = useState(() => localStorage.getItem(THEME_KEY) !== 'light');
-  const [preview, setPreview] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const fileRef = useRef();
+  const [showLogin, setShowLogin] = useState(true);
 
+  const token = localStorage.getItem('token');
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light');
+    localStorage.setItem('theme', dark ? 'dark' : 'light');
   }, [dark]);
 
-  const fetchNotes = () => {
-    const params = new URLSearchParams({ archived: filter === 'archived' ? 'true' : 'false' });
-    if (search) params.set('q', search);
-    fetch(`/api/notes?${params}`, { headers })
-      .then(r => r.json())
-      .then(data => {
-        let sorted = [...data];
-        if (sort === 'oldest') sorted.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-        else if (sort === 'title') sorted.sort((a, b) => a.title.localeCompare(b.title));
-        else if (sort === 'newest' || sort === 'updated') sorted.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
-        setNotes(sorted);
-      }).catch(console.error);
+  const fetchProjects = async () => {
+    const res = await fetch('/api/projects', { headers });
+    if (res.ok) setProjects(await res.json());
   };
 
-  const fetchStats = () => {
-    fetch('/api/stats', { headers }).then(r => r.json()).then(setStats).catch(console.error);
+  const fetchStats = async () => {
+    const res = await fetch('/api/tasks/dashboard', { headers });
+    if (res.ok) setStats(await res.json());
   };
 
-  const fetchTrash = () => {
-    fetch('/api/notes/trash', { headers }).then(r => r.json()).then(setTrash).catch(console.error);
+  const fetchTasks = async (projectId) => {
+    if (!projectId) return;
+    const res = await fetch(`/api/tasks/project/${projectId}`, { headers });
+    if (res.ok) setTasks(await res.json());
   };
 
-  useEffect(() => { fetchNotes(); }, [filter, search, sort]);
-  useEffect(() => { fetchStats(); }, [notes]);
+  useEffect(() => { if (user) { fetchProjects(); fetchStats(); } }, [user]);
+  useEffect(() => { if (selectedProjectId) { fetchTasks(selectedProjectId); fetchProjects(); } }, [selectedProjectId]);
 
-  useEffect(() => {
-    fetch('/api/tags', { headers }).then(r => r.json()).then(setTags).catch(console.error);
-  }, []);
-
-  const resetForm = () => { setForm({ title: '', content: '', color: '#6366f1', reminder_at: '' }); setEditingId(null); setPreview(false); };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.title.trim()) return;
-    const body = { ...form, reminder_at: form.reminder_at || null };
-    const url = editingId ? `/api/notes/${editingId}` : '/api/notes';
-    const method = editingId ? 'PUT' : 'POST';
-    const res = await fetch(url, { method, headers, body: JSON.stringify(body) });
-    const note = await res.json();
-    if (editingId) {
-      setNotes(notes.map(n => n.id === note.id ? note : n));
-    } else {
-      setNotes([note, ...notes]);
-    }
-    resetForm();
+  const selectProject = async (id) => {
+    setSelectedProjectId(id);
+    setActiveTab('project');
+    const res = await fetch(`/api/projects/${id}`, { headers });
+    if (res.ok) setSelectedProject(await res.json());
   };
 
-  const handleEdit = (note) => {
-    setForm({
-      title: note.title,
-      content: note.content || '',
-      color: note.color || '#6366f1',
-      reminder_at: note.reminder_at ? note.reminder_at.slice(0, 16) : '',
-    });
-    setEditingId(note.id);
+  const createProject = async (data) => {
+    const res = await fetch('/api/projects', { method: 'POST', headers, body: JSON.stringify(data) });
+    if (res.ok) { await fetchProjects(); await fetchStats(); setActiveTab('dashboard'); }
   };
 
-  const handleDelete = async (id) => {
-    await fetch(`/api/notes/${id}`, { method: 'DELETE', headers });
-    setNotes(notes.filter(n => n.id !== id));
+  const createTask = async (data) => {
+    const res = await fetch(`/api/tasks/project/${selectedProjectId}`, { method: 'POST', headers, body: JSON.stringify(data) });
+    if (res.ok) { await fetchTasks(selectedProjectId); await fetchStats(); }
   };
 
-  const togglePin = async (id) => {
-    const res = await fetch(`/api/notes/${id}/pin`, { method: 'PATCH', headers });
-    const { pinned } = await res.json();
-    setNotes(notes.map(n => n.id === id ? { ...n, pinned } : n));
+  const updateStatus = async (id, status) => {
+    await fetch(`/api/tasks/${id}/status`, { method: 'PATCH', headers, body: JSON.stringify({ status }) });
+    await fetchTasks(selectedProjectId);
+    await fetchStats();
   };
 
-  const toggleArchive = async (id) => {
-    const res = await fetch(`/api/notes/${id}/archive`, { method: 'PATCH', headers });
-    const { archived } = await res.json();
-    if (filter !== 'archived') setNotes(notes.filter(n => n.id !== id));
-    else setNotes(notes.map(n => n.id === id ? { ...n, archived } : n));
-  };
-
-  const restoreNote = async (id) => {
-    await fetch(`/api/notes/${id}/restore`, { method: 'PATCH', headers });
-    setTrash(trash.filter(n => n.id !== id));
-    fetchNotes();
-    fetchStats();
-  };
-
-  const permanentDelete = async (id) => {
-    await fetch(`/api/notes/${id}/permanent`, { method: 'DELETE', headers });
-    setTrash(trash.filter(n => n.id !== id));
-    fetchStats();
-  };
-
-  const createTag = async () => {
-    if (!newTag.trim()) return;
-    const res = await fetch('/api/tags', { method: 'POST', headers, body: JSON.stringify({ name: newTag.trim() }) });
-    if (res.ok) { setTags([...tags, await res.json()]); setNewTag(''); }
-  };
-
-  const deleteTag = async (id) => {
-    await fetch(`/api/tags/${id}`, { method: 'DELETE', headers });
-    setTags(tags.filter(t => t.id !== id));
-  };
-
-  const handleShare = async (id) => {
-    const res = await fetch(`/api/notes/${id}/share`, { method: 'POST', headers });
-    const data = await res.json();
-    if (data.shareUrl) {
-      await navigator.clipboard.writeText(data.shareUrl);
-      alert('Share link copied to clipboard!');
-    }
-  };
-
-  const handleFileUpload = async (id) => {
-    const file = fileRef.current?.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    const fd = new FormData();
-    fd.append('file', file);
-    const res = await fetch(`/api/notes/${id}/file`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
-    if (res.ok) {
-      const data = await res.json();
-      setNotes(notes.map(n => n.id === id ? { ...n, file_path: data.file_path } : n));
-    }
-    setUploading(false);
-    fileRef.current.value = '';
-  };
-
-  const charCount = form.content.length;
-  const wordCount = form.content.trim() ? form.content.trim().split(/\s+/).length : 0;
-
-  const openTrash = () => { fetchTrash(); setShowTrash(true); };
-
-  const formatDate = (d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-  if (showTrash) {
+  if (!user) {
     return (
-      <div className="app">
-        <div className="app-header">
-          <h1>🗑️ Trash</h1>
-          <button onClick={() => setShowTrash(false)}>Back</button>
-        </div>
-        <div className="notes-list">
-          {trash.length === 0 && <p className="empty">Trash is empty</p>}
-          {trash.map(note => (
-            <div key={note.id} className="note-card trash-card" style={{ borderLeftColor: note.color || '#6366f1' }}>
-              <h3>{note.title}</h3>
-              <p>{note.content}</p>
-              <div className="note-footer">
-                <span className="note-date">Deleted {formatDate(note.deleted_at)}</span>
-                <div className="note-actions">
-                  <button onClick={() => restoreNote(note.id)} title="Restore">♻️</button>
-                  <button onClick={() => permanentDelete(note.id)} title="Delete forever" className="delete-btn">🗑️</button>
-                </div>
-              </div>
-            </div>
-          ))}
+      <div className="auth-page">
+        <div className="auth-container">
+          <div className="auth-header-section">
+            <h1>Project Management System</h1>
+            <p>Organize your work, manage projects, track tasks</p>
+          </div>
+          <div className="auth-toggle">
+            <button onClick={() => setShowLogin(true)} className={showLogin ? 'active' : ''}>Sign In</button>
+            <button onClick={() => setShowLogin(false)} className={!showLogin ? 'active' : ''}>Sign Up</button>
+          </div>
+          {showLogin ? <Login /> : <Register />}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="app">
-      <div className="app-header">
-        <h1>Notes</h1>
-        <div className="header-right">
-          <button className="icon-btn" onClick={() => setDark(!dark)} title="Toggle theme">{dark ? '☀️' : '🌙'}</button>
-          <span className="user-greeting">{user?.name}</span>
-          <button onClick={logout}>Logout</button>
-        </div>
-      </div>
-
-      {stats && (
-        <div className="stats-bar">
-          <span>📝 {stats.total}</span>
-          <span>📌 {stats.pinned}</span>
-          <span>📦 {stats.archived}</span>
-          <span>🗑️ <button className="link-btn" onClick={openTrash}>{stats.trashed}</button></span>
-          <span>🏷️ {stats.tags}</span>
-          <span>📊 {stats.words} words</span>
-          <a className="export-link" href="/api/stats/export" onClick={e => { e.preventDefault(); fetch('/api/stats/export', { headers }).then(r => r.blob()).then(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'notes-export.json'; a.click(); }); }} title="Export JSON">📥 Export</a>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="note-form">
-        <input placeholder="Note title" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
-        <div className="editor-toolbar">
-          <button type="button" className={preview ? '' : 'active'} onClick={() => setPreview(false)}>Write</button>
-          <button type="button" className={preview ? 'active' : ''} onClick={() => setPreview(true)}>Preview</button>
-        </div>
-        {preview ? (
-          <div className="preview" dangerouslySetInnerHTML={{ __html: marked(form.content || '') }} />
-        ) : (
-          <textarea placeholder="Write your note... (Markdown supported)" rows={4} value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} />
-        )}
-        <div className="form-meta">
-          <span className="word-count">{charCount} chars · {wordCount} words</span>
-        </div>
-        <div className="color-picker">
-          <span className="color-label">Color</span>
-          <div className="color-options">
-            {COLORS.map(c => (
-              <button key={c.value} type="button" className={`color-swatch ${form.color === c.value ? 'active' : ''}`} style={{ background: c.value }} onClick={() => setForm({ ...form, color: c.value })} title={c.label} />
-            ))}
-          </div>
-        </div>
-        <div className="form-row">
-          <label className="reminder-label">🔔 Reminder</label>
-          <input type="datetime-local" value={form.reminder_at} onChange={e => setForm({ ...form, reminder_at: e.target.value })} className="reminder-input" />
-        </div>
-        <div className="form-actions">
-          <button type="submit">{editingId ? 'Update' : 'Add'} Note</button>
-          {editingId && <button type="button" onClick={resetForm}>Cancel</button>}
-        </div>
-      </form>
-
-      <div className="toolbar">
-        <div className="search-bar">
-          <input placeholder="Search notes..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <div className="toolbar-row">
-          <div className="filter-chips">
-            {['active', 'archived'].map(f => (
-              <button key={f} className={`chip ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>
-                {f === 'active' ? '📋 Active' : '📦 Archived'}
-              </button>
-            ))}
-          </div>
-          <select className="sort-select" value={sort} onChange={e => setSort(e.target.value)}>
-            <option value="updated">Recently Updated</option>
-            <option value="newest">Newest First</option>
-            <option value="oldest">Oldest First</option>
-            <option value="title">By Title</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="tags-section">
-        <div className="tags-header">
-          <span>🏷️ Tags</span>
-          <div className="tag-input-group">
-            <input placeholder="New tag..." value={newTag} onChange={e => setNewTag(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), createTag())} />
-            <button type="button" onClick={createTag}>+</button>
-          </div>
-        </div>
-        <div className="tags-list">
-          {tags.length === 0 && <span className="no-tags">No tags yet</span>}
-          {tags.map(tag => (
-            <span key={tag.id} className="tag-badge" style={{ background: tag.color + '22', color: tag.color, borderColor: tag.color + '44' }}>
-              {tag.name}
-              <button className="tag-remove" onClick={() => deleteTag(tag.id)}>×</button>
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="notes-list">
-        {notes.length === 0 && <p className="empty">{search ? 'No matching notes' : filter === 'archived' ? 'No archived notes' : 'No notes yet — create one above!'}</p>}
-        {notes.map(note => (
-          <div key={note.id} className="note-card" style={{ borderLeftColor: note.color || '#6366f1' }}>
-            <div className="note-header">
-              <h3>{note.title}</h3>
-              <button className={`pin-btn ${note.pinned ? 'pinned' : ''}`} onClick={() => togglePin(note.id)} title={note.pinned ? 'Unpin' : 'Pin'}>{note.pinned ? '📌' : '📍'}</button>
-            </div>
-            <div className="note-content" dangerouslySetInnerHTML={{ __html: marked(note.content || '') }} />
-            {note.reminder_at && <div className="reminder-badge">🔔 {formatDate(note.reminder_at)}</div>}
-            {note.file_path && (
-              <div className="file-attachment">
-                📎 <a href={`/uploads/${note.file_path}`} target="_blank" rel="noopener noreferrer">{note.file_path}</a>
-              </div>
-            )}
-            <div className="note-footer">
-              <span className="note-date">{formatDate(note.updated_at)}</span>
-              <div className="note-actions">
-                <button onClick={() => handleEdit(note)} title="Edit">✏️</button>
-                <button onClick={() => toggleArchive(note.id)} title={note.archived ? 'Restore' : 'Archive'}>{note.archived ? '📤' : '📥'}</button>
-                <button onClick={() => handleShare(note.id)} title="Share">🔗</button>
-                <label className="file-btn" title="Attach file">
-                  📎
-                  <input type="file" hidden onChange={() => handleFileUpload(note.id)} ref={fileRef} />
-                </label>
-                <button onClick={() => handleDelete(note.id)} title="Delete" className="delete-btn">🗑️</button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-      {uploading && <div className="toast">Uploading...</div>}
-    </div>
-  );
-}
-
-function App() {
-  const { user } = useAuth();
-  const [showLogin, setShowLogin] = useState(true);
-  const [dark, setDark] = useState(() => localStorage.getItem(THEME_KEY) !== 'light');
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-  }, [dark]);
-
-  if (user) return <Notes />;
-
-  return (
-    <div className="app">
-      <div className="app-header" style={{ justifyContent: 'space-between' }}>
-        <h1>Notes App</h1>
-        <button className="icon-btn" onClick={() => setDark(!dark)} title="Toggle theme">{dark ? '☀️' : '🌙'}</button>
-      </div>
-      <div className="auth-header">
-        <p>Your personal note-taking companion</p>
-      </div>
-      <div className="auth-toggle">
-        <button onClick={() => setShowLogin(true)} className={showLogin ? 'active' : ''}>Login</button>
-        <button onClick={() => setShowLogin(false)} className={!showLogin ? 'active' : ''}>Register</button>
-      </div>
-      {showLogin ? <Login /> : <Register />}
+    <div className="app-layout">
+      <Sidebar
+        activeTab={activeTab} setActiveTab={setActiveTab}
+        projects={projects} onSelectProject={selectProject} selectedProjectId={selectedProjectId}
+        onLogout={logout} user={user} dark={dark} toggleTheme={() => setDark(!dark)}
+      />
+      {activeTab === 'dashboard' && <Dashboard stats={stats} projects={projects} onSelectProject={selectProject} />}
+      {activeTab === 'project' && <ProjectBoard project={selectedProject} tasks={tasks} onBack={() => { setActiveTab('dashboard'); setSelectedProjectId(null); }} onCreateTask={createTask} onStatusChange={updateStatus} onDeleteTask={() => {}} onAddComment={() => {}} />}
+      {activeTab === 'new-project' && <ProjectForm onSubmit={createProject} onCancel={() => setActiveTab('dashboard')} />}
     </div>
   );
 }
