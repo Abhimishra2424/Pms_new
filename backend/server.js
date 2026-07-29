@@ -1,23 +1,30 @@
 require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const { initDB } = require('./db');
+const http = require('http');
+const app = require('./src/app');
+const { initSocket } = require('./src/sockets');
+const { initCron } = require('./src/cron');
+const { sequelize } = require('./src/models');
+const { setIO } = require('./src/services/notificationService');
+const logger = require('./src/utils/logger');
+const env = require('./src/config/env');
 
-const app = express();
-const PORT = process.env.PORT || 5000;
+const server = http.createServer(app);
+const io = initSocket(server);
+setIO(io);
 
-app.use(cors());
-app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const PORT = env.PORT || 5000;
 
-app.use('/api', require('./routes/auth'));
-app.use('/api/projects', require('./routes/projects'));
-app.use('/api/tasks', require('./routes/tasks'));
+sequelize.authenticate()
+  .then(() => {
+    logger.info('Database connected successfully');
+    server.listen(PORT, () => {
+      logger.info(`Server running on port ${PORT} in ${env.NODE_ENV} mode`);
+      initCron();
+    });
+  })
+  .catch((err) => {
+    logger.error('Failed to connect to database:', err);
+    process.exit(1);
+  });
 
-initDB().then(() => {
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-}).catch(err => {
-  console.error('Failed to initialize DB:', err);
-  process.exit(1);
-});
+module.exports = { server, io };
