@@ -28,14 +28,11 @@ class AuthService {
       throw ApiError.badRequest('Email already registered');
     }
 
-    const salt = await bcrypt.genSalt(12);
-    const hashedPassword = await bcrypt.hash(data.password, salt);
-
     const user = await authRepository.createUser({
       firstName: data.firstName,
       lastName: data.lastName,
       email: data.email,
-      password: hashedPassword,
+      password: data.password,
       role: 'developer',
     });
 
@@ -45,7 +42,7 @@ class AuthService {
     const userData = user.toJSON();
     delete userData.password;
 
-    return { user: userData, accessToken, refreshToken };
+    return { user: userData, token: accessToken, refreshToken };
   }
 
   async login(email, password) {
@@ -71,7 +68,7 @@ class AuthService {
     const userData = user.toJSON();
     delete userData.password;
 
-    return { user: userData, accessToken, refreshToken };
+    return { user: userData, token: accessToken, refreshToken };
   }
 
   async refreshToken(token) {
@@ -97,7 +94,7 @@ class AuthService {
     const accessToken = this.generateAccessToken(user);
     const refreshToken = this.generateRefreshToken(user);
 
-    return { accessToken, refreshToken };
+    return { token: accessToken, refreshToken };
   }
 
   async forgotPassword(email) {
